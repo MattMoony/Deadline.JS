@@ -1,0 +1,25 @@
+header {
+  text-align: center;
+  padding-bottom: 20px;
+  border-bottom: 2.5px solid #f2f2f2;
+}
+
+h1 {
+  font-family: serif;
+  margin: 0;
+  margin-top: 15px;
+}
+
+h3 {
+  margin: 0;
+  font-family: monospace;
+  letter-spacing: 5px;
+}
+
+article {
+  box-sizing: border-box;
+  width: 80%;
+  margin: 0 auto;
+  background-color: #fafafa;
+  padding: 25px;
+}
