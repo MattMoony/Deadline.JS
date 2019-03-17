@@ -20,6 +20,7 @@ article {
   box-sizing: border-box;
   width: 80%;
   margin: 0 auto;
-  background-color: #fafafa;
+  background-color: #fbfbfb;
   padding: 25px;
+  padding-top: 40px;
 }
