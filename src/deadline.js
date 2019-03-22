@@ -1,25 +1,99 @@
 const deadlinejs = {
   days_short: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
   days_full: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+  months_full: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
 
   time_steps: [1000, 60, 60, 24, 7, 12],
   time_units: ['second(s)', 'minute(s)', 'hour(s)', 'day(s)', 'week(s)', 'month(s)', 'year(s)'],
   timezone_offset: 1,
 
 
-  createCalendarFrame: (year = new Date().getFullYear(), month = new Date().getMonth()) => {
-    let mStart  = new Date(year, month, 1),
-        cal_wr = document.createElement('div');
+
+  createCalendarFrame: (cid, token, year = new Date().getFullYear(), month = new Date().getMonth()) => {
+    let cal_wr = document.createElement('div');
 
     cal_wr.classList.add('deadlinejs-cal-wrapper');
     cal_wr.innerHTML = deadlinejs.createCalendarHeaderFrame();
 
     let cal = document.createElement('div');
     cal.classList.add('deadlinejs-cal');
+
+    cal.setAttribute('cid', cid);
+    cal.setAttribute('token', token);
+
+    deadlinejs.createCalendarNav(cal_wr, cal);
     cal_wr.appendChild(cal);
 
-    let week = deadlinejs.createWeek(cal);
-    let cindex = 0;
+    deadlinejs.fillCalendarDays(cal, year, month);
+    return cal_wr;
+  },
+  createCalendarNav: (cal_wr, cal) => {
+    let cal_nav = document.createElement('nav');
+    cal_nav.classList.add('deadlinejs-cal-nav');
+
+    let cid = cal.getAttribute('cid'),
+        token = cal.getAttribute('token');
+
+    let cal_month_title = document.createElement('h1');
+    cal_month_title.classList.add('deadlinejs-cal-nav-month');
+    cal_nav.appendChild(cal_month_title);
+
+    let cal_year_title = document.createElement('h4');
+    cal_year_title.classList.add('deadlinejs-cal-nav-year');
+    cal_nav.appendChild(cal_year_title);
+
+    let cal_left = document.createElement('span');
+    cal_left.classList.add('deadlinejs-cal-nav-but');
+    cal_left.innerHTML = '&#x27F5;';
+    cal_nav.appendChild(cal_left);
+
+    cal_left.onclick = () => {
+      let n_month = deadlinejs.displayMonth(cal, -1);
+
+      deadlinejs.getMonthsEvents(cid, token, n_month.getMonth(), n_month.getFullYear())
+      .then(data => {
+        deadlinejs.fillEvents(cal_wr, data);
+      });
+    };
+
+    let cal_right = document.createElement('span');
+    cal_right.innerHTML = '&#x27F6;';
+    cal_right.classList.add('deadlinejs-cal-nav-but');
+    cal_nav.appendChild(cal_right);
+
+    cal_right.onclick = () => {
+      let n_month = deadlinejs.displayMonth(cal, 1);
+      deadlinejs.getMonthsEvents(cid, token, n_month.getMonth(), n_month.getFullYear())
+      .then(data => {
+        deadlinejs.fillEvents(cal_wr, data);
+      });
+    };
+
+    cal_wr.appendChild(cal_nav);
+  },
+  displayMonth: (cal, a) => {
+    new Array(...document.getElementsByClassName('deadlinejs-info-popup')).forEach(d => {
+      d.style.display = 'none';
+    });
+
+    let cu_month = new Date(cal.getAttribute('current-month'));
+    cu_month.setMonth(cu_month.getMonth()+a);
+    deadlinejs.fillCalendarDays(cal, cu_month.getFullYear(), cu_month.getMonth());
+    return cu_month;
+  },
+  fillCalendarDays: (cal, year, month) => {
+    deadlinejs.clearCalendarDays(cal);
+    glob_cal = cal;
+
+    let calNav = cal.parentNode.getElementsByClassName('deadlinejs-cal-nav')[0];
+    calNav.getElementsByClassName('deadlinejs-cal-nav-month')[0].innerHTML = deadlinejs.months_full[month];
+    calNav.getElementsByClassName('deadlinejs-cal-nav-year')[0].innerHTML = year;
+
+    let mStart  = new Date(year, month, 1),
+        week = deadlinejs.createWeek(cal),
+        cindex = 0;
+
+    cal.setAttribute('current-month', mStart.toISOString());
 
     for (let i = 0; i < mStart.getDay()-1; i++, cindex++) {
       let e_day = document.createElement('div');
@@ -41,8 +115,55 @@ const deadlinejs = {
       e_day.classList.add('deadlinejs-not-month');
       week.appendChild(e_day);
     }
+  },
+  fillEvents: (cal, data) => {
+    cal.getElementsByClassName('deadlinejs-cal-title')[0].innerHTML = data.summary;
+    cal.getElementsByClassName('deadlinejs-cal-description')[0].innerHTML = data.description;
 
-    return cal_wr;
+    let lastEdited = (new Date()-new Date(new Date(data.updated).setHours(new Date(data.updated).getHours()+
+      (-1)*deadlinejs.timezone_offset))),
+        le_out = cal.getElementsByClassName('deadlinejs-cal-last-edited')[0];
+
+    (() => {
+      for (let i = 0; i < deadlinejs.time_steps.length; i++) {
+        lastEdited /= deadlinejs.time_steps[i];
+        if (lastEdited < deadlinejs.time_steps[i+1]) {
+          le_out.innerHTML = Math.floor(lastEdited) + ' ' + deadlinejs.time_units[i];
+          return;
+        }
+      }
+      le_out.innerHTML = Math.floor(lastEdited) + ' ' + deadlinejs.time_units[deadlinejs.time_units.length-1];
+    })();
+
+    data.items.forEach(i => {
+      let d_beginning = new Date(i.start.date||i.start.dateTime),
+          d_end = new Date(i.end.date||i.end.dateTime);
+
+      if (d_end-d_beginning <= 86400000) {
+        let gen_id = i.id+d_beginning.toISOString();
+        deadlinejs.createEvent(i, cal, d_beginning, d_end, gen_id);
+        return;
+      }
+
+      let su_length = i.summary.length,
+          d_length = Math.ceil((d_end-d_beginning)/86400000),
+          d_index = 1;
+
+      while (d_beginning.getDate() < d_end.getDate() && d_beginning.getMonth() <= d_end.getMonth() && d_beginning.getFullYear() <= d_end.getFullYear()) {
+        let gen_id = i.id+d_beginning.toISOString();
+        i.summary = i.summary.substr(0, su_length).trim();
+
+        i.summary += ` (${d_index}/${d_length})`;
+        deadlinejs.createEvent(i, cal, d_beginning, d_end, gen_id);
+
+        d_beginning.setHours(23,0,0,0);
+        d_beginning.setDate(d_beginning.getDate()+1);
+        d_index++;
+      }
+    });
+  },
+  clearCalendarDays: cal => {
+    cal.innerHTML = '';
   },
   createCalendarHeaderFrame: () => {
     return `
@@ -94,18 +215,75 @@ const deadlinejs = {
     d.innerHTML = date.getDate();
     d_header.appendChild(d);
   },
-  createEventFrame: () => {
+  createEvent: (i, cal, d_beginning, d_end, gen_id) => {
+    try {
+      let start = (i.start.date||i.start.dateTime);
+      let e = deadlinejs.createEventFrame(gen_id);
+
+      if (start.length > 10) {
+        e.classList.add('deadlinejs-timed-event');
+        e.innerHTML = '<span class="deadlinejs-timed-event-time">' + start.substr(11, 5) + '</span> ' + i.summary;
+      } else {
+        e.classList.add('deadlinejs-day-event');
+        e.innerHTML = i.summary;
+      }
+      cal.getElementsByClassName("dc-" + d_beginning.toISOString().substr(0, 10))[0].appendChild(e);
+
+      let pop = deadlinejs.createEventPopupFrame(e, gen_id);
+
+      pop.getElementsByClassName('deadlinejs-info-popup-summary')[0].innerHTML = i.summary;
+      if (start.length > 10) {
+        pop.getElementsByClassName('deadlinejs-info-popup-datetime')[0].innerHTML =
+          `${d_beginning.getDate()<10?'0'+d_beginning.getDate():d_beginning.getDate()}.${
+            d_beginning.getMonth()+1<10?'0'+(d_beginning.getMonth()+1):d_beginning.getMonth()+1}.${d_beginning.getFullYear()} - ${
+            d_beginning.getHours()<10?'0'+d_beginning.getHours():d_beginning.getHours()}:${
+            d_beginning.getMinutes()<10?'0'+d_beginning.getMinutes():d_beginning.getMinutes()}`;
+      } else {
+        pop.getElementsByClassName('deadlinejs-info-popup-datetime')[0].innerHTML =
+          `${d_beginning.getDate()<10?'0'+d_beginning.getDate():d_beginning.getDate()}.${
+            d_beginning.getMonth()+1<10?'0'+(d_beginning.getMonth()+1):d_beginning.getMonth()+1}.${d_beginning.getFullYear()}`;
+      }
+      if (i.location) {
+        pop.getElementsByClassName('deadlinejs-info-popup-location')[0].innerHTML = i.location;
+      } else {
+        pop.getElementsByClassName('deadlinejs-info-popup-location')[0].style.display = 'none';
+      }
+      if (i.description) {
+        pop.getElementsByClassName('deadlinejs-info-popup-description')[0].innerHTML = i.description;
+      } else {
+        pop.getElementsByClassName('deadlinejs-info-popup-description')[0].style.display = 'none';
+      }
+
+      document.body.appendChild(pop);
+
+      e.onclick = () => {
+        document.getElementById(gen_id).style.display =
+          (document.getElementById(gen_id).style.display == 'block' ? 'none' : 'block');
+
+        new Array(...document.getElementsByClassName('deadlinejs-info-popup')).forEach(d => {
+          if (d.id === gen_id)
+            return;
+          d.style.display = 'none';
+        });
+      };
+    } catch (e) {
+      return;
+    }
+  },
+  createEventFrame: id => {
     let e = document.createElement('div');
     e.classList.add('deadlinejs-event');
+    e.id = 'target-'+id;
     return e;
   },
-  createEventPopupFrame: ev => {
+  createEventPopupFrame: (ev, e_id) => {
     let p = document.createElement('div');
     p.classList.add('deadlinejs-info-popup');
+    p.id = e_id;
     let e_rect = ev.getBoundingClientRect();
 
     p.style.left = e_rect.left + e_rect.width/2 + "px";
-    p.style.top = e_rect.top + e_rect.height+10 + "px";
+    p.style.top = e_rect.bottom + 5 + "px";
 
     p.innerHTML = `
       <div class="deadlinejs-info-popup-heading">
@@ -139,6 +317,11 @@ const deadlinejs = {
         mEnd    = new Date(new Date().getFullYear(), new Date().getMonth()+1, 1).toISOString();
     return deadlinejs.getEvents(cid, token, {timeMin:mStart, timeMax:mEnd});
   },
+  getMonthsEvents: (cid, token, month, year) => {
+    let mStart  = new Date(year, month, 1).toISOString(),
+        mEnd    = new Date(year, month+1, 1).toISOString();
+    return deadlinejs.getEvents(cid, token, {timeMin:mStart, timeMax:mEnd});
+  },
 
 
 
@@ -149,80 +332,23 @@ const deadlinejs = {
       let cid = c.getAttribute('c-id'),
           token = c.getAttribute('api-token');
 
-      let cal = deadlinejs.createCalendarFrame();
+      let cal = deadlinejs.createCalendarFrame(cid, token);
       c.parentNode.insertBefore(cal, c);
       c.parentNode.removeChild(c);
 
       deadlinejs.getCurrentMonthsEvents(cid, token)
       .then(data => {
-        cal.getElementsByClassName('deadlinejs-cal-title')[0].innerHTML = data.summary;
-        cal.getElementsByClassName('deadlinejs-cal-description')[0].innerHTML = data.description;
-
-
-
-        let lastEdited = (new Date()-new Date(new Date(data.updated).setHours(new Date(data.updated).getHours()+
-          (-1)*deadlinejs.timezone_offset))),
-            le_out = cal.getElementsByClassName('deadlinejs-cal-last-edited')[0];
-
-        (() => {
-          for (let i = 0; i < deadlinejs.time_steps.length; i++) {
-            lastEdited /= deadlinejs.time_steps[i];
-            if (lastEdited < deadlinejs.time_steps[i+1]) {
-              le_out.innerHTML = Math.floor(lastEdited) + ' ' + deadlinejs.time_units[i];
-              return;
-            }
-          }
-          le_out.innerHTML = Math.floor(lastEdited) + ' ' + deadlinejs.time_units[deadlinejs.time_units.length-1];
-        })();
-
-
-
-        data.items.forEach(i => {
-          let e = deadlinejs.createEventFrame();
-          let start = (i.start.date||i.start.dateTime);
-
-          if (start.length > 10) {
-            e.classList.add('deadlinejs-timed-event');
-            e.innerHTML = '<span class="deadlinejs-timed-event-time">' + start.substr(11, 5) + '</span> ' + i.summary;
-          } else {
-            e.classList.add('deadlinejs-day-event');
-            e.innerHTML = i.summary;
-          }
-          cal.getElementsByClassName("dc-" + start.substr(0, 10))[0].appendChild(e);
-
-          let pop = deadlinejs.createEventPopupFrame(e);
-          let startD = new Date(start);
-
-          pop.getElementsByClassName('deadlinejs-info-popup-summary')[0].innerHTML = i.summary;
-          if (start.length > 10) {
-            pop.getElementsByClassName('deadlinejs-info-popup-datetime')[0].innerHTML =
-              `${startD.getDate()<10?'0'+startD.getDate():startD.getDate()}.${
-                startD.getMonth()+1<10?'0'+(startD.getMonth()+1):startD.getMonth()+1}.${startD.getFullYear()} - ${
-                startD.getHours()<10?'0'+startD.getHours():startD.getHours()}:${
-                startD.getMinutes()<10?'0'+startD.getMinutes():startD.getMinutes()}`;
-          } else {
-            pop.getElementsByClassName('deadlinejs-info-popup-datetime')[0].innerHTML =
-              `${startD.getDate()<10?'0'+startD.getDate():startD.getDate()}.${
-                startD.getMonth()+1<10?'0'+(startD.getMonth()+1):startD.getMonth()+1}.${startD.getFullYear()}`;
-          }
-          if (i.location) {
-            pop.getElementsByClassName('deadlinejs-info-popup-location')[0].innerHTML = i.location;
-          } else {
-            pop.getElementsByClassName('deadlinejs-info-popup-location')[0].style.display = 'none';
-          }
-          if (i.description) {
-            pop.getElementsByClassName('deadlinejs-info-popup-description')[0].innerHTML = i.description;
-          } else {
-            pop.getElementsByClassName('deadlinejs-info-popup-description')[0].style.display = 'none';
-          }
-
-          document.body.appendChild(pop);
-
-          e.onclick = () => {
-
-          };
-        });
+        deadlinejs.fillEvents(cal, data);
       });
+    });
+  },
+  repositionPopups: () => {
+    new Array(...document.getElementsByClassName('deadlinejs-info-popup')).forEach(p => {
+      let partner = document.getElementById('target-'+p.id),
+          p_rect = partner.getBoundingClientRect();
+
+      p.style.left = p_rect.left + p_rect.width/2 + "px";
+      p.style.top = p_rect.bottom + 5 + "px";
     });
   },
 };
@@ -263,6 +389,40 @@ const deadlinejs = {
     }
     .deadlinejs-cal-last-edit-prefix, .deadlinejs-cal-last-edit-suffix {
       font-size: 11px;
+    }
+    .deadlinejs-cal-nav {
+      font-family: sans-serif;
+      padding: 5px 0 2.5px;
+      text-align: right;
+      vertical-align: middle;
+      user-select: none;
+    }
+    .deadlinejs-cal-nav-month {
+      font-family: sans-serif;
+      font-size: 20px;
+      display: inline-block;
+      margin-right: 5px;
+      vertical-align: sub;
+    }
+    .deadlinejs-cal-nav-year {
+      display: inline-block;
+      font-weight: lighter;
+      font-family: monospace;
+      vertical-align: sub;
+      margin-right: 5px;
+    }
+    .deadlinejs-cal-nav-but {
+      padding: 5px;
+      transition: .35s ease;
+      border-radius: 50%;
+      vertical-align: middle;
+      font-size: 20px;
+      color: #898989;
+      margin: 0;
+    }
+    .deadlinejs-cal-nav-but:hover {
+      cursor: pointer;
+      background-color: rgba(137,137,137,.035);
     }
     .deadlinejs-cal {
       width: 100%;
@@ -336,13 +496,15 @@ const deadlinejs = {
     }
     .deadlinejs-info-popup {
       position: absolute;
-      z-index: 100;
+      z-index: 10;
       background-color: #fff;
       border: 2.5px solid #FF749E;
       box-shadow: 0 0 1.5px dimgray;
       border-radius: 5px;
       padding: 15px;
       font-family: sans-serif;
+
+      display: none;
     }
     .deadlinejs-info-popup-heading {
       padding-bottom: 7.5px;
