@@ -7,6 +7,8 @@ const deadlinejs = {
   time_units: ['second(s)', 'minute(s)', 'hour(s)', 'day(s)', 'week(s)', 'month(s)', 'year(s)'],
   timezone_offset: 1,
 
+  main_color: '#FF749E',
+
 
 
   createCalendarFrame: (cid, token, year = new Date().getFullYear(), month = new Date().getMonth()) => {
@@ -116,7 +118,7 @@ const deadlinejs = {
       week.appendChild(e_day);
     }
   },
-  fillEvents: (cal, data) => {
+  fillEvents: (cal, data, opts = {}) => {
     cal.getElementsByClassName('deadlinejs-cal-title')[0].innerHTML = data.summary;
     cal.getElementsByClassName('deadlinejs-cal-description')[0].innerHTML = data.description;
 
@@ -141,7 +143,7 @@ const deadlinejs = {
 
       if (d_end-d_beginning <= 86400000) {
         let gen_id = i.id+d_beginning.toISOString();
-        deadlinejs.createEvent(i, cal, d_beginning, d_end, gen_id);
+        deadlinejs.createEvent(i, cal, d_beginning, d_end, gen_id, opts);
         return;
       }
 
@@ -154,7 +156,7 @@ const deadlinejs = {
         i.summary = i.summary.substr(0, su_length).trim();
 
         i.summary += ` (${d_index}/${d_length})`;
-        deadlinejs.createEvent(i, cal, d_beginning, d_end, gen_id);
+        deadlinejs.createEvent(i, cal, d_beginning, d_end, gen_id, opts);
 
         d_beginning.setHours(23,0,0,0);
         d_beginning.setDate(d_beginning.getDate()+1);
@@ -215,21 +217,23 @@ const deadlinejs = {
     d.innerHTML = date.getDate();
     d_header.appendChild(d);
   },
-  createEvent: (i, cal, d_beginning, d_end, gen_id) => {
+  createEvent: (i, cal, d_beginning, d_end, gen_id, opts={}) => {
     try {
       let start = (i.start.date||i.start.dateTime);
       let e = deadlinejs.createEventFrame(gen_id);
 
       if (start.length > 10) {
         e.classList.add('deadlinejs-timed-event');
-        e.innerHTML = '<span class="deadlinejs-timed-event-time">' + start.substr(11, 5) + '</span> ' + i.summary;
+        e.style.color = opts.main_color||deadlinejs.main_color;
+        e.innerHTML = '<span class="deadlinejs-timed-event-time" >' + start.substr(11, 5) + '</span> ' + i.summary;
       } else {
         e.classList.add('deadlinejs-day-event');
+        e.style.backgroundColor = opts.main_color||deadlinejs.main_color;
         e.innerHTML = i.summary;
       }
       cal.getElementsByClassName("dc-" + d_beginning.toISOString().substr(0, 10))[0].appendChild(e);
 
-      let pop = deadlinejs.createEventPopupFrame(e, gen_id);
+      let pop = deadlinejs.createEventPopupFrame(e, gen_id, opts);
 
       pop.getElementsByClassName('deadlinejs-info-popup-summary')[0].innerHTML = i.summary;
       if (start.length > 10) {
@@ -276,10 +280,11 @@ const deadlinejs = {
     e.id = 'target-'+id;
     return e;
   },
-  createEventPopupFrame: (ev, e_id) => {
+  createEventPopupFrame: (ev, e_id, opts={}) => {
     let p = document.createElement('div');
     p.classList.add('deadlinejs-info-popup');
     p.id = e_id;
+    p.style.borderColor = opts.main_color||deadlinejs.main_color;
     let e_rect = ev.getBoundingClientRect();
 
     p.style.left = e_rect.left + e_rect.width/2 + "px";
@@ -325,7 +330,7 @@ const deadlinejs = {
 
 
 
-  parseAll: parent => {
+  parseAll: (parent, opts = {}) => {
     parent = parent || document;
 
     new Array(...parent.getElementsByTagName('deadline-cal')).forEach(c => {
@@ -338,7 +343,7 @@ const deadlinejs = {
 
       deadlinejs.getCurrentMonthsEvents(cid, token)
       .then(data => {
-        deadlinejs.fillEvents(cal, data);
+        deadlinejs.fillEvents(cal, data, opts);
       });
     });
   },
@@ -488,7 +493,7 @@ const deadlinejs = {
     }
     .deadlinejs-day-event {
       color: #fff;
-      background-color: #FF749E;
+      background-color: ${deadlinejs.main_color};
     }
     .deadlinejs-timed-event-time {
       font-weight: bold;
@@ -498,7 +503,7 @@ const deadlinejs = {
       position: absolute;
       z-index: 10;
       background-color: #fff;
-      border: 2.5px solid #FF749E;
+      border: 2.5px solid ${deadlinejs.main_color};
       box-shadow: 0 0 1.5px dimgray;
       border-radius: 5px;
       padding: 15px;
